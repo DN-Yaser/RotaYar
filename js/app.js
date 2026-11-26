@@ -12,18 +12,31 @@ let proposal = null;
 let installEvt = null;
 let period = currentJalaliMonth();
 
-// پیش‌نویس‌ها فقط در حافظه زنده صفحه نگهداری می‌شوند و هرگز در localStorage نیستند.
+// پیش‌نویس آمار و فراداده هر ماه فقط در حافظه زنده صفحه نگهداری می‌شود.
 const drafts = Object.create(null);
+const metaDrafts = Object.create(null);
 const dirtyPeriods = new Set();
-const $ = s => document.querySelector(s);
-const group = id => state.groups.find(g => g.id === id);
+const $ = selector => document.querySelector(selector);
+const group = id => state.groups.find(item => item.id === id);
 const val = id => ($(id)?.value || '').trim();
 const clone = value => JSON.parse(JSON.stringify(value));
 const currentPeriodKey = () => periodKey(period);
+const isFinalized = key => !!state.records[key]?.finalizedAt;
 
-function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600);
+function toast(message) {
+  const element = $('#toast');
+  element.textContent = message;
+  element.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => element.classList.remove('show'), 3000);
+}
+
+function normalizePriority(active, priority) {
+  const allowed = new Set(active || []);
+  const ordered = [...new Set((Array.isArray(priority) ? priority : []).map(String))]
+    .filter(id => allowed.has(id));
+  // اگر بخش فعالی وجود دارد، حداقل یک بخش باید در اولویت‌بندی حضور داشته باشد.
+  return ordered.length || !active?.length ? ordered : [active[0]];
 }
 
 function monthDraft(key = currentPeriodKey()) {
@@ -31,36 +44,79 @@ function monthDraft(key = currentPeriodKey()) {
   return drafts[key];
 }
 
+function monthMetaDraft(key = currentPeriodKey()) {
+  if (!metaDrafts[key]) metaDrafts[key] = clone(state.records[key]?.meta || {});
+  return metaDrafts[key];
+}
+
+function markDraftChanged(key = currentPeriodKey()) {
+  dirtyPeriods.add(key);
+}
+
+function buildGroupMeta(sourceGroup) {
+  return {
+    name: sourceGroup.name,
+    active: [...sourceGroup.active],
+    prioritySections: normalizePriority(sourceGroup.active, sourceGroup.prioritySections),
+    sections: state.sections
+      .filter(section => sourceGroup.active.includes(section.id))
+      .map(section => ({ id: section.id, name: section.name })),
+    members: sourceGroup.members.map(member => ({ id: member.id, name: member.name }))
+  };
+}
+
+function ensureMonthGroupMeta(sourceGroup, key = currentPeriodKey()) {
+  const metadata = monthMetaDraft(key);
+  if (!metadata[sourceGroup.id]) metadata[sourceGroup.id] = buildGroupMeta(sourceGroup);
+  const item = metadata[sourceGroup.id];
+  item.active = Array.isArray(item.active) ? [...item.active] : [...sourceGroup.active];
+  item.prioritySections = normalizePriority(item.active, item.prioritySections ?? item.active);
+  item.sections = Array.isArray(item.sections) ? item.sections : [];
+  item.members = Array.isArray(item.members) ? item.members : [];
+  return item;
+}
+
 function monthlyGroup(sourceGroup, key = currentPeriodKey()) {
   if (!sourceGroup) return null;
-  const all = monthDraft(key);
-  const groupData = all[sourceGroup.id] || {};
-  const meta = state.records[key]?.meta?.[sourceGroup.id];
-  if (meta) {
-    const memberMeta = [...(meta.members || [])];
+  const groupData = monthDraft(key)[sourceGroup.id] || {};
+  const metadata = monthMetaDraft(key)[sourceGroup.id];
+
+  if (metadata) {
+    const memberMeta = [...(metadata.members || [])];
     const knownMembers = new Set(memberMeta.map(member => member.id));
     sourceGroup.members.forEach(member => {
       if (!knownMembers.has(member.id)) memberMeta.push({ id: member.id, name: member.name });
     });
-    const active = [...(meta.active || [])];
-    sourceGroup.active.forEach(id => { if (!active.includes(id)) active.push(id); });
-    const sections = [...(meta.sections || [])];
-    const knownSections = new Set(sections.map(section => section.id));
-    sourceGroup.active.forEach(id => {
-      const section = state.sections.find(item => item.id === id);
-      if (section && !knownSections.has(id)) sections.push({ id: section.id, name: section.name });
+
+    const active = [...(metadata.active || [])];
+    const historicalSections = [...(metadata.sections || [])];
+    const sectionMap = new Map();
+    historicalSections.forEach(section => sectionMap.set(section.id, section));
+    state.sections.forEach(section => {
+      if (!sectionMap.has(section.id)) sectionMap.set(section.id, { id: section.id, name: section.name });
     });
+
+    const prioritySections = normalizePriority(active, metadata.prioritySections ?? active);
     const members = memberMeta.map(member => ({
-      ...member, counts: { ...(groupData[member.id] || {}) }
+      ...member,
+      counts: { ...(groupData[member.id] || {}) }
     }));
     return {
-      group: { id: sourceGroup.id, name: meta.name || sourceGroup.name, active, members },
-      sections: sections.length ? sections : state.sections.filter(s => active.includes(s.id))
+      group: {
+        id: sourceGroup.id,
+        name: metadata.name || sourceGroup.name,
+        active,
+        prioritySections,
+        members
+      },
+      sections: [...sectionMap.values()]
     };
   }
+
   return {
     group: {
       ...sourceGroup,
+      prioritySections: normalizePriority(sourceGroup.active, sourceGroup.prioritySections),
       members: sourceGroup.members.map(member => ({
         ...member,
         counts: { ...(groupData[member.id] || {}) }
@@ -70,13 +126,9 @@ function monthlyGroup(sourceGroup, key = currentPeriodKey()) {
   };
 }
 
-function markDraftChanged(key = currentPeriodKey()) {
-  dirtyPeriods.add(key);
-}
-
 function latestFinalizedAt() {
   return Object.values(state.records || {})
-    .map(r => r.finalizedAt)
+    .map(record => record.finalizedAt)
     .filter(value => value && Number.isFinite(Date.parse(value)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
 }
@@ -89,18 +141,30 @@ function commit() {
 function render() {
   if (!group(gid)) gid = state.groups[0]?.id;
   const key = currentPeriodKey();
-  const monthData = monthlyGroup(group(gid), key);
-  if (!(monthData?.group?.members || []).some(m => m.id === mid)) mid = '';
+  const selectedMonth = monthlyGroup(group(gid), key);
+  if (!(selectedMonth?.group?.members || []).some(member => member.id === mid)) mid = '';
+  const groupConfigs = state.groups.map(sourceGroup => monthlyGroup(sourceGroup, key));
+
   $('#view').innerHTML = views[tab]({
-    state, gid, mid, q, proposal, period, periodKey: key,
-    monthlyGroup: monthData?.group || null,
-    monthSections: monthData?.sections || state.sections,
+    state,
+    gid,
+    mid,
+    q,
+    proposal,
+    period,
+    periodKey: key,
+    monthlyGroup: selectedMonth?.group || null,
+    monthSections: selectedMonth?.sections || state.sections,
+    groupConfigs,
     dirty: dirtyPeriods.has(key),
+    historicalMode: isFinalized(key),
     today: jalaliDate(new Date()),
     lastFinalizedAt: latestFinalizedAt(),
     canInstall: !!installEvt
   });
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('#tabs button').forEach(button => {
+    button.classList.toggle('on', button.dataset.tab === tab);
+  });
 }
 
 function updateMonthlyCount(groupId, memberId, sectionId, delta) {
@@ -117,56 +181,130 @@ function updateMonthlyCount(groupId, memberId, sectionId, delta) {
   render();
 }
 
+/**
+ * تنظیمات ماه ثبت‌نشده، الگوی جاری گروه است و در تنظیمات پایه ذخیره می‌شود.
+ * تنظیمات یک ماه ثبت‌شده فقط در فراداده همان ماه پیش‌نویس شده و با ثبت نهایی اعمال می‌شود.
+ */
+function editGroupConfig(groupId, updater) {
+  const sourceGroup = group(groupId);
+  if (!sourceGroup) return;
+  const key = currentPeriodKey();
+
+  if (isFinalized(key)) {
+    const metadata = ensureMonthGroupMeta(sourceGroup, key);
+    if (updater(metadata, true) === false) { render(); return; }
+    metadata.active = [...new Set(metadata.active || [])];
+    metadata.prioritySections = normalizePriority(metadata.active, metadata.prioritySections);
+    markDraftChanged(key);
+    proposal = null;
+    render();
+    return;
+  }
+
+  if (updater(sourceGroup, false) === false) { render(); return; }
+  sourceGroup.active = [...new Set(sourceGroup.active || [])];
+  sourceGroup.prioritySections = normalizePriority(sourceGroup.active, sourceGroup.prioritySections);
+  markDraftChanged(key);
+  proposal = null;
+  commit();
+}
+
+function addSectionToMeta(meta, sectionId) {
+  const existing = (meta.sections || []).some(section => section.id === sectionId);
+  if (existing) return;
+  const section = state.sections.find(item => item.id === sectionId);
+  if (section) meta.sections.push({ id: section.id, name: section.name });
+}
+
 const actions = {
   'add-group'() {
-    const name = val('#newGroup'); if (!name) return;
-    const g = { id: uid(), name, active: state.sections.map(s => s.id), members: [] };
-    state.groups.push(g); gid = g.id; commit();
-  },
-  'del-group'(d) { if (confirm('این گروه از فهرست جاری حذف شود؟ سوابق ثبت نهایی‌شده ماه‌های قبل در خروجی باقی می‌مانند.')) { state.groups = state.groups.filter(g => g.id !== d.g); commit(); } },
-  'add-members'(d) {
-    const g = group(d.g);
-    val('#mem-' + d.g).split(/[\n,،]+/).map(x => x.trim()).filter(Boolean)
-      .forEach(name => g.members.push({ id: uid(), name, legacyTotals: {} }));
+    const name = val('#newGroup');
+    if (!name) return;
+    const active = state.sections.map(section => section.id);
+    const newGroup = {
+      id: uid(), name, active, prioritySections: [...active], members: []
+    };
+    state.groups.push(newGroup);
+    gid = newGroup.id;
     commit();
   },
-  'del-member'(d) { const g = group(d.g); g.members = g.members.filter(m => m.id !== d.m); commit(); },
-  'reset-counts'(d) {
+  'del-group'(data) {
+    if (!confirm('این گروه از فهرست جاری حذف شود؟ سوابق ثبت نهایی‌شده ماه‌های قبل در خروجی باقی می‌مانند.')) return;
+    state.groups = state.groups.filter(item => item.id !== data.g);
+    commit();
+  },
+  'add-members'(data) {
+    const selectedGroup = group(data.g);
+    if (!selectedGroup) return;
+    val('#mem-' + data.g).split(/[\n,،]+/).map(name => name.trim()).filter(Boolean)
+      .forEach(name => selectedGroup.members.push({ id: uid(), name, legacyTotals: {} }));
+    commit();
+  },
+  'del-member'(data) {
+    const selectedGroup = group(data.g);
+    if (!selectedGroup) return;
+    selectedGroup.members = selectedGroup.members.filter(member => member.id !== data.m);
+    commit();
+  },
+  'reset-counts'(data) {
     if (!confirm('آمار ثبت‌نشده این گروه در ماه انتخاب‌شده صفر شود؟ برای اعمال در سوابق، ثبت نهایی ماه را بزنید.')) return;
     const key = currentPeriodKey();
-    const all = monthDraft(key);
-    all[d.g] = {};
+    monthDraft(key)[data.g] = {};
     markDraftChanged(key);
     render();
   },
   'add-section'() {
-    const name = val('#newSec'); if (!name) return;
-    const s = { id: uid(), name }; state.sections.push(s);
-    state.groups.forEach(g => g.active.push(s.id)); commit();
+    const name = val('#newSec');
+    if (!name) return;
+    const section = { id: uid(), name };
+    state.sections.push(section);
+    state.groups.forEach(item => {
+      item.active.push(section.id);
+      item.prioritySections = normalizePriority(item.active, [...(item.prioritySections || []), section.id]);
+    });
+    commit();
   },
   'seed-sections'() {
     ['تریاژ', 'احیا', 'بخش سرپایی', 'مشاهده'].forEach(name => {
-      const s = { id: uid(), name }; state.sections.push(s); state.groups.forEach(g => g.active.push(s.id));
-    }); commit();
-  },
-  'del-section'(d) {
-    if (!confirm('این بخش از تنظیمات جاری همه گروه‌ها حذف شود؟ سوابق ماه‌های ثبت نهایی‌شده در فایل خروجی حفظ می‌شوند.')) return;
-    state.sections = state.sections.filter(s => s.id !== d.s);
-    state.groups.forEach(g => { g.active = g.active.filter(id => id !== d.s); });
+      const section = { id: uid(), name };
+      state.sections.push(section);
+      state.groups.forEach(item => {
+        item.active.push(section.id);
+        item.prioritySections = normalizePriority(item.active, [...(item.prioritySections || []), section.id]);
+      });
+    });
     commit();
   },
-  cnt(d) { updateMonthlyCount(d.g, d.m, d.s, d.d); },
-  'select-member'(d) { mid = d.m; render(); document.querySelector('.entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
-  'nav-member'(d) {
-    const list = [...(monthlyGroup(group(gid))?.group?.members || [])].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
-    if (!list.length) return;
-    const i = list.findIndex(m => m.id === mid);
-    mid = list[(i + Number(d.d) + list.length) % list.length].id; render();
+  'del-section'(data) {
+    if (!confirm('این بخش از تنظیمات جاری همه گروه‌ها حذف شود؟ سوابق ثبت نهایی‌شده ماه‌های قبل حفظ می‌شوند.')) return;
+    state.sections = state.sections.filter(section => section.id !== data.s);
+    state.groups.forEach(item => {
+      item.active = item.active.filter(id => id !== data.s);
+      item.prioritySections = (item.prioritySections || []).filter(id => id !== data.s);
+    });
+    commit();
+  },
+  cnt(data) { updateMonthlyCount(data.g, data.m, data.s, data.d); },
+  'select-member'(data) {
+    mid = data.m;
+    render();
+    document.querySelector('.entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  'nav-member'(data) {
+    const members = [...(monthlyGroup(group(gid))?.group?.members || [])]
+      .sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    if (!members.length) return;
+    const index = members.findIndex(member => member.id === mid);
+    mid = members[(index + Number(data.d) + members.length) % members.length].id;
+    render();
   },
   'make-proposal'() {
     const monthData = monthlyGroup(group(gid));
-    const g = monthData?.group;
-    proposal = { gid, map: suggest(g, (monthData?.sections || []).filter(s => g?.active.includes(s.id))) };
+    const selectedGroup = monthData?.group;
+    proposal = {
+      gid,
+      map: suggest(selectedGroup, (monthData?.sections || []).filter(section => selectedGroup?.active.includes(section.id)))
+    };
     render();
   },
   'apply-proposal'() {
@@ -179,107 +317,219 @@ const actions = {
       all[gid][memberId][sectionId] = Number(all[gid][memberId][sectionId] || 0) + 1;
     });
     if (Object.keys(proposal.map).length) markDraftChanged(key);
-    proposal = null; tab = 'report'; render();
+    proposal = null;
+    tab = 'report';
+    render();
     toast('چرخش به‌صورت پیش‌نویس ثبت شد؛ برای ذخیره در خروجی، ثبت نهایی ماه را بزنید.');
   },
-  'month-nav'(d) {
-    period = moveJalaliMonth(period, Number(d.d));
-    proposal = null; mid = ''; render();
+  'month-nav'(data) {
+    period = moveJalaliMonth(period, Number(data.d));
+    proposal = null;
+    mid = '';
+    render();
   },
   'jump-period'() {
     const selected = parseJalaliPeriod(val('#jumpYear'), val('#jumpMonth'));
     if (!selected) { toast('سال یا ماه شمسی معتبر نیست.'); return; }
-    period = selected; proposal = null; mid = ''; render();
+    period = selected;
+    proposal = null;
+    mid = '';
+    render();
   },
   'finalize-period'() {
     const key = currentPeriodKey();
     if (!dirtyPeriods.has(key)) { toast('تغییر ثبت‌نشده‌ای برای ذخیره وجود ندارد.'); return; }
-    if (!confirm(`اطلاعات ماه ${key.replace('-', '/') } به‌صورت نهایی ذخیره شود؟ پس از تأیید، در حافظه مرورگر و خروجی JSON قرار می‌گیرد.`)) return;
+    const monthMeta = monthMetaDraft(key);
+    if (!confirm(`اطلاعات و تنظیمات اولویت ماه ${key.replace('-', '/')} به‌صورت نهایی ذخیره شود؟`)) return;
+
     const previous = state.records[key];
-    const meta = clone(previous?.meta || {});
+    const meta = clone(monthMeta);
     for (const currentGroup of state.groups) {
-      if (!meta[currentGroup.id]) {
-        meta[currentGroup.id] = {
-          name: currentGroup.name,
-          active: [...currentGroup.active],
-          sections: state.sections.filter(section => currentGroup.active.includes(section.id)).map(section => ({ id: section.id, name: section.name })),
-          members: currentGroup.members.map(member => ({ id: member.id, name: member.name }))
-        };
-      } else {
-        const knownMembers = new Set((meta[currentGroup.id].members || []).map(member => member.id));
-        currentGroup.members.forEach(member => {
-          if (!knownMembers.has(member.id)) meta[currentGroup.id].members.push({ id: member.id, name: member.name });
-        });
-        const knownSections = new Set((meta[currentGroup.id].sections || []).map(section => section.id));
-        currentGroup.active.forEach(sectionId => {
-          if (!meta[currentGroup.id].active.includes(sectionId)) meta[currentGroup.id].active.push(sectionId);
-          const section = state.sections.find(item => item.id === sectionId);
-          if (section && !knownSections.has(sectionId)) meta[currentGroup.id].sections.push({ id: section.id, name: section.name });
-        });
-      }
+      if (!meta[currentGroup.id]) meta[currentGroup.id] = buildGroupMeta(currentGroup);
+      const item = meta[currentGroup.id];
+      item.active = Array.isArray(item.active) ? [...item.active] : [...currentGroup.active];
+      item.prioritySections = normalizePriority(item.active, item.prioritySections ?? currentGroup.prioritySections);
+      item.sections = Array.isArray(item.sections) ? item.sections : [];
+      item.members = Array.isArray(item.members) ? item.members : [];
+
+      const knownMembers = new Set(item.members.map(member => member.id));
+      currentGroup.members.forEach(member => {
+        if (!knownMembers.has(member.id)) item.members.push({ id: member.id, name: member.name });
+      });
+
+      const knownSections = new Set(item.sections.map(section => section.id));
+      item.active.forEach(sectionId => {
+        if (knownSections.has(sectionId)) return;
+        const section = state.sections.find(candidate => candidate.id === sectionId);
+        if (section) item.sections.push({ id: section.id, name: section.name });
+      });
     }
-    state.records[key] = { finalizedAt: new Date().toISOString(), groups: clone(monthDraft(key)), meta };
+
+    state.records[key] = {
+      finalizedAt: new Date().toISOString(),
+      groups: clone(monthDraft(key)),
+      meta
+    };
     if (!save(state)) {
       if (previous) state.records[key] = previous;
       else delete state.records[key];
       toast('ثبت نهایی انجام نشد؛ ذخیره‌سازی مرورگر در دسترس نیست.');
       return;
     }
+
     delete drafts[key];
+    delete metaDrafts[key];
     dirtyPeriods.delete(key);
     render();
-    toast('اطلاعات این ماه با موفقیت ثبت نهایی شد.');
+    toast('اطلاعات و تنظیمات اولویت این ماه با موفقیت ثبت نهایی شد.');
   },
   export() { exportJSON(state); },
   import() { $('#file').click(); },
   'reset-all'() {
-    if (confirm('همه تنظیمات و سوابق ثبت نهایی‌شده پاک شود؟ ابتدا خروجی JSON بگیرید.')) {
-      state = emptyState(); gid = undefined;
-      Object.keys(drafts).forEach(k => delete drafts[k]); dirtyPeriods.clear(); commit();
-    }
+    if (!confirm('همه تنظیمات و سوابق ثبت نهایی‌شده پاک شود؟ ابتدا خروجی JSON بگیرید.')) return;
+    state = emptyState();
+    gid = undefined;
+    Object.keys(drafts).forEach(key => delete drafts[key]);
+    Object.keys(metaDrafts).forEach(key => delete metaDrafts[key]);
+    dirtyPeriods.clear();
+    commit();
   },
-  async install() { installEvt.prompt(); await installEvt.userChoice; installEvt = null; render(); }
+  async install() {
+    if (!installEvt) return;
+    installEvt.prompt();
+    await installEvt.userChoice;
+    installEvt = null;
+    render();
+  },
+  'edit-record-priority'(data) {
+    const [year, month] = String(data.p || '').split('-').map(Number);
+    const selected = parseJalaliPeriod(year, month);
+    if (!selected) return;
+    period = selected;
+    tab = 'groups';
+    proposal = null;
+    render();
+    scrollTo(0, 0);
+  },
+  'move-priority'(data) {
+    const selectedGroup = group(data.g);
+    if (!selectedGroup) return;
+    editGroupConfig(data.g, (config, historical) => {
+      const active = config.active || [];
+      const order = normalizePriority(active, config.prioritySections ?? active);
+      const from = order.indexOf(data.s);
+      const to = from + Number(data.d);
+      if (from < 0 || to < 0 || to >= order.length) return false;
+      [order[from], order[to]] = [order[to], order[from]];
+      config.prioritySections = order;
+    });
+  }
 };
 
 const changes = {
-  'pick-group'(d, el) { gid = el.value; mid = ''; q = ''; proposal = null; render(); },
-  'pick-member'(d, el) { mid = el.value; render(); },
-  'rename-group'(d, el) { const n = el.value.trim(); if (n) group(d.g).name = n; commit(); },
-  'rename-section'(d, el) { const n = el.value.trim(); const s = state.sections.find(x => x.id === d.s); if (n) s.name = n; commit(); },
-  'toggle-sec'(d, el) {
-    const g = group(d.g); g.active = g.active.filter(id => id !== d.s);
-    if (el.checked) g.active.push(d.s); commit();
+  'pick-group'(data, element) { gid = element.value; mid = ''; q = ''; proposal = null; render(); },
+  'pick-member'(data, element) { mid = element.value; render(); },
+  'rename-group'(data, element) {
+    const name = element.value.trim();
+    if (name) group(data.g).name = name;
+    commit();
   },
-  'set-prop'(d, el) { if (proposal) proposal.map[d.m] = el.value; }
+  'rename-section'(data, element) {
+    const name = element.value.trim();
+    const section = state.sections.find(item => item.id === data.s);
+    if (name && section) section.name = name;
+    commit();
+  },
+  'toggle-sec'(data, element) {
+    editGroupConfig(data.g, (config, historical) => {
+      const active = [...(config.active || [])].filter(id => id !== data.s);
+      if (element.checked) active.push(data.s);
+      config.active = [...new Set(active)];
+      if (historical) addSectionToMeta(config, data.s);
+
+      let priority = [...(config.prioritySections || config.active.filter(id => id !== data.s))]
+        .filter(id => config.active.includes(id));
+      if (element.checked && !priority.includes(data.s)) priority.push(data.s);
+      if (!element.checked && !priority.length && config.active.length) priority = [config.active[0]];
+      config.prioritySections = priority;
+    });
+  },
+  'toggle-priority'(data, element) {
+    editGroupConfig(data.g, config => {
+      const active = config.active || [];
+      let order = normalizePriority(active, config.prioritySections ?? active);
+      if (element.checked) {
+        if (!order.includes(data.s)) order.push(data.s);
+      } else {
+        if (order.length <= 1) {
+          toast('برای فعال ماندن پیشنهاد چرخش، حداقل یک بخش باید در اولویت‌بندی باشد.');
+          return false;
+        }
+        order = order.filter(id => id !== data.s);
+      }
+      config.prioritySections = order;
+    });
+  },
+  'set-prop'(data, element) { if (proposal) proposal.map[data.m] = element.value; }
 };
 
-document.addEventListener('click', e => {
-  const t = e.target.closest('[data-act]'); if (t) return actions[t.dataset.act]?.(t.dataset, t);
-  const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; render(); scrollTo(0, 0); }
+document.addEventListener('click', event => {
+  const actionElement = event.target.closest('[data-act]');
+  if (actionElement) return actions[actionElement.dataset.act]?.(actionElement.dataset, actionElement);
+  const tabElement = event.target.closest('[data-tab]');
+  if (tabElement) {
+    tab = tabElement.dataset.tab;
+    render();
+    scrollTo(0, 0);
+  }
 });
-document.addEventListener('change', e => {
-  const t = e.target.closest('[data-change]'); if (t) changes[t.dataset.change]?.(t.dataset, t);
+
+document.addEventListener('change', event => {
+  const changeElement = event.target.closest('[data-change]');
+  if (changeElement) changes[changeElement.dataset.change]?.(changeElement.dataset, changeElement);
 });
-// جستجوی زنده‌ی نام: منوی کشویی فیلتر و اولین نتیجه انتخاب می‌شود
-document.addEventListener('input', e => {
-  if (e.target.id !== 'memFilter') return;
-  q = e.target.value.trim();
-  const hits = [...(monthlyGroup(group(gid))?.group?.members || [])].filter(m => m.name.includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+
+// جستجوی زنده‌ی نام: منوی کشویی فیلتر و اولین نتیجه انتخاب می‌شود.
+document.addEventListener('input', event => {
+  if (event.target.id !== 'memFilter') return;
+  q = event.target.value.trim();
+  const hits = [...(monthlyGroup(group(gid))?.group?.members || [])]
+    .filter(member => member.name.includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name, 'fa'));
   if (q && hits.length) mid = hits[0].id;
   render();
-  const f = $('#memFilter'); f.focus(); f.setSelectionRange(f.value.length, f.value.length);
+  const filter = $('#memFilter');
+  filter.focus();
+  filter.setSelectionRange(filter.value.length, filter.value.length);
 });
-$('#file').addEventListener('change', async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+
+$('#file').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
   try {
-    const s = await importJSON(f);
+    const imported = await importJSON(file);
     if (!confirm('تنظیمات و سوابق ثبت نهایی‌شده فعلی با فایل جایگزین شوند؟')) return;
-    state = s; gid = s.groups[0]?.id; mid = ''; q = ''; proposal = null;
-    Object.keys(drafts).forEach(k => delete drafts[k]); dirtyPeriods.clear();
-    commit(); toast('داده‌های فایل وارد شد');
-  } catch { toast('فایل نامعتبر است'); }
+    state = imported;
+    gid = imported.groups[0]?.id;
+    mid = '';
+    q = '';
+    proposal = null;
+    Object.keys(drafts).forEach(key => delete drafts[key]);
+    Object.keys(metaDrafts).forEach(key => delete metaDrafts[key]);
+    dirtyPeriods.clear();
+    commit();
+    toast('داده‌های فایل وارد شد.');
+  } catch {
+    toast('فایل نامعتبر است.');
+  }
 });
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; render(); });
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installEvt = event;
+  render();
+});
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 render();

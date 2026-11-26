@@ -1,19 +1,21 @@
 import { stats } from './logic.js';
 import { JALALI_MONTHS, monthTitle, formatJalaliDate, formatJalaliDateTime } from './calendar.js';
 
-export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const fa = n => Number(n).toLocaleString('fa-IR', { maximumFractionDigits: 0 });
-const color = i => `hsl(${(i * 67 + 170) % 360} 62% 48%)`;
-const empty = t => `<div class="empty">${t}</div>`;
+export const esc = value => String(value).replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+export const fa = number => Number(number).toLocaleString('fa-IR', { maximumFractionDigits: 1 });
+const color = index => `hsl(${(index * 67 + 170) % 360} 62% 48%)`;
+const empty = content => `<div class="empty">${content}</div>`;
 
 const picker = ({ state, gid }) => state.groups.length
-  ? `<div class="row"><select data-change="pick-group">${state.groups.map(g =>
-      `<option value="${g.id}" ${g.id === gid ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>` : '';
+  ? `<div class="row"><select data-change="pick-group" aria-label="انتخاب گروه">${state.groups.map(item =>
+    `<option value="${item.id}" ${item.id === gid ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></div>` : '';
 
-const level = r => {
-  if (!r.total) return ['none', 'بدون داده'];
-  const t = `تعادل ${fa(r.balance * 100)}٪`;
-  return [r.balance >= .8 ? 'good' : r.balance >= .5 ? 'mid' : 'bad', t];
+const level = row => {
+  if (!row.priorityTotal) return ['none', 'بدون سابقه در بخش‌های اولویت'];
+  const label = `تعادل ${fa(row.balance * 100)}٪`;
+  return [row.balance >= .8 ? 'good' : row.balance >= .5 ? 'mid' : 'bad', label];
 };
 
 function periodBar(ctx) {
@@ -22,8 +24,8 @@ function periodBar(ctx) {
     : ctx.state.records?.[ctx.periodKey]?.finalizedAt
       ? '<span class="period-status saved">ثبت نهایی شده</span>'
       : '<span class="period-status empty-status">هنوز ثبت نهایی نشده</span>';
-  const months = JALALI_MONTHS.map((m, i) =>
-    `<option value="${i + 1}" ${ctx.period.month === i + 1 ? 'selected' : ''}>${m}</option>`).join('');
+  const months = JALALI_MONTHS.map((name, index) =>
+    `<option value="${index + 1}" ${ctx.period.month === index + 1 ? 'selected' : ''}>${name}</option>`).join('');
   return `<article class="card calendar-card">
     <div class="calendar-head">
       <button class="nav month-nav" data-act="month-nav" data-d="-1" aria-label="ماه قبل">‹</button>
@@ -43,114 +45,223 @@ function periodBar(ctx) {
     </div>
     <div class="finalize-row">
       <button class="btn finalize-btn" data-act="finalize-period" ${ctx.dirty ? '' : 'disabled'}>ثبت نهایی اطلاعات ${JALALI_MONTHS[ctx.period.month - 1]}</button>
-      <small>تا پیش از ثبت نهایی، تغییرات این ماه فقط در حافظه موقت صفحه هستند و در خروجی قرار نمی‌گیرند.</small>
+      <small>آمار و تغییرات اولویت تا پیش از ثبت نهایی فقط در حافظه موقت صفحه هستند و در خروجی قرار نمی‌گیرند.</small>
     </div>
   </article>`;
 }
 
+function reorderItems(group, prioritySections) {
+  if (!prioritySections.length) return '<p class="empty small">هنوز بخشی برای اولویت‌بندی انتخاب نشده است.</p>';
+  return `<ol class="priority-order">${prioritySections.map((section, index) => `<li>
+    <span class="priority-rank">${fa(index + 1)}</span>
+    <strong>${esc(section.name)}</strong>
+    <span class="priority-actions">
+      <button type="button" class="order-btn" data-act="move-priority" data-g="${group.id}" data-s="${section.id}" data-d="-1" aria-label="بالاتر بردن ${esc(section.name)}" title="بالاتر" ${index === 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" class="order-btn" data-act="move-priority" data-g="${group.id}" data-s="${section.id}" data-d="1" aria-label="پایین‌تر بردن ${esc(section.name)}" title="پایین‌تر" ${index === prioritySections.length - 1 ? 'disabled' : ''}>↓</button>
+    </span>
+  </li>`).join('')}</ol>`;
+}
+
 export const views = {
   report(ctx) {
-    const g = ctx.monthlyGroup;
+    const group = ctx.monthlyGroup;
     const calendar = periodBar(ctx);
-    if (!g) return calendar + empty('ابتدا از تب «گروه‌ها» یک گروه بسازید.');
-    const rows = stats(g, ctx.monthSections);
-    if (!rows.length || !rows[0].act.length)
+    if (!group) return calendar + empty('ابتدا از تب «گروه‌ها» یک گروه بسازید.');
+    const rows = stats(group, ctx.monthSections);
+    if (!rows.length || !rows[0].act.length) {
       return calendar + picker(ctx) + empty('برای این گروه عضو یا بخش فعال تعریف نشده است.<br>از تب «گروه‌ها» تکمیل کنید.');
+    }
 
-    const sorted = g.members.filter(m => !ctx.q || m.name.includes(ctx.q) || m.id === ctx.mid).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
-    const sel = rows.find(r => r.member.id === ctx.mid) || null;
-    const btn = (s, d, t) => `<button data-act="cnt" data-g="${g.id}" data-m="${sel.member.id}" data-s="${s.id}" data-d="${d}" aria-label="${d > 0 ? 'اضافه' : 'کم'} کردن">${t}</button>`;
+    const filteredMembers = group.members
+      .filter(member => !ctx.q || member.name.includes(ctx.q) || member.id === ctx.mid)
+      .sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    const selected = rows.find(row => row.member.id === ctx.mid) || null;
+    const counterButton = (section, delta, label) =>
+      `<button data-act="cnt" data-g="${group.id}" data-m="${selected.member.id}" data-s="${section.id}" data-d="${delta}" aria-label="${delta > 0 ? 'اضافه' : 'کم'} کردن">${label}</button>`;
+
     const entry = `<article class="card entry">
       <h4>ثبت اطلاعات فرد در ${monthTitle(ctx.period)}</h4>
       <input type="search" id="memFilter" class="filter" placeholder="جستجوی نام..." autocomplete="off" value="${esc(ctx.q || '')}">
       <div class="pickrow">
-        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">›</button>
+        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">‹</button>
         <select id="memSelect" data-change="pick-member">
-          <option value="">— انتخاب فرد (${fa(sorted.length)} نفر) —</option>
-          ${sorted.map(m => `<option value="${m.id}" ${m.id === ctx.mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
+          <option value="">— انتخاب فرد (${fa(filteredMembers.length)} نفر) —</option>
+          ${filteredMembers.map(member => `<option value="${member.id}" ${member.id === ctx.mid ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}
         </select>
-        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">‹</button>
+        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">›</button>
       </div>
-      ${sel ? (() => {
-        const [cls, label] = level(sel);
-        return `<div class="head selhead"><b>${esc(sel.member.name)}</b><span class="badge ${cls}">${label}</span></div>
-        ${sel.act.map((s, j) => `<div class="sec big"><span class="sname">${esc(s.name)}</span>
-          <div class="track"><i style="width:${sel.pct[j]}%;background:${color(j)}"></i></div>
-          <span class="pct">${fa(sel.pct[j])}٪</span>
-          <span class="stepper">${btn(s, -1, '−')}<output>${fa(sel.counts[j])}</output>${btn(s, 1, '+')}</span></div>`).join('')}
-        <div class="prio">اولویت قرارگیری بعدی: ${sel.total ? sel.priority.map((p, k) => `<span class="chip">${fa(k + 1)}. ${esc(p.name)}</span>`).join('') : 'بدون سابقه؛ همه بخش‌ها هم‌اولویت'}</div>`;
+      ${selected ? (() => {
+        const [badgeClass, label] = level(selected);
+        return `<div class="head selhead"><b>${esc(selected.member.name)}</b><span class="badge ${badgeClass}">${label}</span></div>
+        ${selected.act.map((section, index) => `<div class="sec big">
+          <span class="sname">${esc(section.name)}</span>
+          <div class="track"><i style="width:${selected.pct[index]}%;background:${color(index)}"></i></div>
+          <span class="pct">${fa(selected.pct[index])}٪</span>
+          <span class="stepper">${counterButton(section, -1, '−')}<output>${fa(selected.counts[index])}</output>${counterButton(section, 1, '+')}</span>
+        </div>`).join('')}
+        <div class="prio"><b>اولویت حضور بعدی:</b> ${selected.priority.length
+          ? selected.priority.map((item, index) => `<span class="chip">${fa(index + 1)}. ${esc(item.name)}</span>`).join('')
+          : 'هیچ بخش اولویت‌داری انتخاب نشده است.'}
+          <small class="priority-hint">بخش‌های خارج از اولویت همچنان در آمار ثبت می‌شوند.</small>
+        </div>`;
       })() : '<p class="empty small">یک نام را از منوی بالا انتخاب کنید تا بخش‌هایش را ثبت کنید.</p>'}
     </article>`;
 
-    const act = rows[0].act;
-    const table = `<h4>جدول اولویت‌بندی ماه ${JALALI_MONTHS[ctx.period.month - 1]} (از متعادل‌ترین به نامتعادل‌ترین)</h4>
-    <div class="twrap"><table class="rt">
-      <thead><tr><th class="c-name">نام</th><th>تعادل</th>${act.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>اولویت بعدی</th></tr></thead>
-      <tbody>${rows.map((r, i) => {
-        const [cls] = level(r);
-        return `<tr data-act="select-member" data-m="${r.member.id}" class="${r.member.id === ctx.mid ? 'on' : ''}">
-          <td class="c-name"><span class="rank sm">${fa(i + 1)}</span>${esc(r.member.name)}</td>
-          <td><span class="badge ${cls}">${r.total ? fa(r.balance * 100) + '٪' : '—'}</span></td>
-          ${r.counts.map((c, j) => `<td><b>${fa(c)}</b><small>${fa(r.pct[j])}٪</small></td>`).join('')}
-          <td class="c-next">${r.total ? esc(r.priority[0].name) : '—'}</td></tr>`;
-      }).join('')}</tbody></table></div>`;
+    const columns = rows[0].act;
+    const table = `<h4>جدول اولویت‌بندی ماه ${JALALI_MONTHS[ctx.period.month - 1]}</h4>
+      <p class="subtle">امتیاز تعادل فقط بر اساس بخش‌های انتخاب‌شده در اولویت‌بندی محاسبه می‌شود؛ سایر بخش‌ها نیز در جدول و ثبت آمار باقی می‌مانند.</p>
+      <div class="twrap"><table class="rt">
+        <thead><tr><th class="c-name">نام</th><th>تعادل اولویت</th>${columns.map(section => `<th>${esc(section.name)}</th>`).join('')}<th>اولویت بعدی</th></tr></thead>
+        <tbody>${rows.map((row, index) => {
+          const [badgeClass] = level(row);
+          return `<tr data-act="select-member" data-m="${row.member.id}" class="${row.member.id === ctx.mid ? 'on' : ''}">
+            <td class="c-name"><span class="rank sm">${fa(index + 1)}</span>${esc(row.member.name)}</td>
+            <td><span class="badge ${badgeClass}">${row.priorityTotal ? fa(row.balance * 100) + '٪' : '—'}</span></td>
+            ${row.counts.map((count, cellIndex) => `<td><b>${fa(count)}</b><small>${fa(row.pct[cellIndex])}٪</small></td>`).join('')}
+            <td class="c-next">${row.priority.length ? esc(row.priority[0].name) : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
 
     return calendar + picker(ctx) + entry + table;
   },
 
   rotate(ctx) {
-    const g = ctx.monthlyGroup;
+    const group = ctx.monthlyGroup;
     const calendar = periodBar(ctx);
-    if (!g) return calendar + empty('ابتدا یک گروه بسازید.');
-    const act = ctx.monthSections.filter(s => g.active.includes(s.id));
-    if (!g.members.length || !act.length) return calendar + picker(ctx) + empty('گروه عضو یا بخش فعال ندارد.');
-    let out = calendar + picker(ctx) + `<div class="row"><button class="btn" data-act="make-proposal">پیشنهاد چرخش بعدی برای این ماه</button></div>`;
-    const p = ctx.proposal;
-    if (p && p.gid === g.id) {
-      out += `<article class="card"><h4>چیدمان پیشنهادی (قابل ویرایش)</h4>` + g.members.map(m =>
-        `<div class="prop"><span>${esc(m.name)}</span><select data-change="set-prop" data-m="${m.id}">${act.map(s =>
-          `<option value="${s.id}" ${p.map[m.id] === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`).join('') +
+    if (!group) return calendar + empty('ابتدا یک گروه بسازید.');
+    const active = ctx.monthSections.filter(section => group.active.includes(section.id));
+    const priorityIds = group.prioritySections || group.active;
+    const priority = priorityIds.map(id => active.find(section => section.id === id)).filter(Boolean);
+    if (!group.members.length || !active.length) return calendar + picker(ctx) + empty('گروه عضو یا بخش فعال ندارد.');
+    if (!priority.length) {
+      return calendar + picker(ctx) + empty('برای این گروه بخشی در اولویت‌بندی انتخاب نشده است. از تب «گروه‌ها» حداقل یک بخش را انتخاب کنید.');
+    }
+
+    let output = calendar + picker(ctx) + `<article class="card rotation-note">
+      <h4>مبنای پیشنهاد چرخش</h4>
+      <p>پیشنهاد خودکار فقط بین بخش‌های انتخاب‌شده در اولویت‌بندی انجام می‌شود.</p>
+      <div class="priority-chips">${priority.map((section, index) => `<span class="chip">${fa(index + 1)}. ${esc(section.name)}</span>`).join('')}</div>
+      <button class="btn" data-act="make-proposal">پیشنهاد چرخش بعدی برای این ماه</button>
+    </article>`;
+
+    const proposal = ctx.proposal;
+    if (proposal && proposal.gid === group.id) {
+      output += `<article class="card"><h4>چیدمان پیشنهادی (قابل ویرایش)</h4>` + group.members.map(member =>
+        `<div class="prop"><span>${esc(member.name)}</span><select data-change="set-prop" data-m="${member.id}">${priority.map(section =>
+          `<option value="${section.id}" ${proposal.map[member.id] === section.id ? 'selected' : ''}>${esc(section.name)}</option>`).join('')}</select></div>`).join('') +
         `<div class="row"><button class="btn" data-act="apply-proposal">اعمال پیشنهاد در پیش‌نویس ماه</button></div></article>`;
-    } else out += empty('پیشنهاد بر اساس کمترین درصد حضور هر فرد و ظرفیت برابر بخش‌ها ساخته می‌شود.');
-    return out;
+    }
+    return output;
   },
 
-  groups({ state, period }) {
-    const add = `<article class="card"><div class="addrow"><input type="text" id="newGroup" placeholder="نام گروه جدید (مثلاً گروه الف)"><button class="btn" data-act="add-group">افزودن</button></div></article>`;
-    return `<p class="subtle">آمار ماه انتخاب‌شده (${monthTitle(period)}) به‌صورت جداگانه نگهداری می‌شود.</p>` + add + state.groups.map(g => `<article class="card">
-      <div class="head"><input class="inline" type="text" value="${esc(g.name)}" data-change="rename-group" data-g="${g.id}"><button class="btn danger sm" data-act="del-group" data-g="${g.id}">حذف</button></div>
-      <h4>بخش‌های فعال چرخش</h4>
-      ${state.sections.length ? `<div class="checks">${state.sections.map(s => `<label class="check"><input type="checkbox" data-change="toggle-sec" data-g="${g.id}" data-s="${s.id}" ${g.active.includes(s.id) ? 'checked' : ''}>${esc(s.name)}</label>`).join('')}</div>` : '<p class="empty">ابتدا از تب «بخش‌ها» بخش تعریف کنید.</p>'}
-      <h4>اعضا (${fa(g.members.length)})</h4>
-      <ul class="members">${g.members.map(m => `<li>${esc(m.name)}<button class="x" data-act="del-member" data-g="${g.id}" data-m="${m.id}" aria-label="حذف">✕</button></li>`).join('')}</ul>
-      <div class="addrow"><textarea id="mem-${g.id}" rows="2" placeholder="نام‌ها؛ هر نام در یک خط یا با ویرگول جدا"></textarea><button class="btn" data-act="add-members" data-g="${g.id}">افزودن</button></div>
-      <button class="btn ghost sm" data-act="reset-counts" data-g="${g.id}">صفر کردن آمار پیش‌نویس این ماه</button></article>`).join('');
+  groups(ctx) {
+    const { state, period, periodKey, historicalMode } = ctx;
+    const addGroup = `<article class="card"><div class="addrow">
+      <input type="text" id="newGroup" placeholder="نام گروه جدید (مثلاً گروه الف)">
+      <button class="btn" data-act="add-group">افزودن</button>
+    </div></article>`;
+
+    const intro = historicalMode
+      ? `<article class="settings-context historical"><b>در حال تنظیم سوابق ${monthTitle(period)}</b><p>تنظیمات بخش‌ها و اولویت‌ها فقط برای همین ماه تغییر می‌کند. برای ذخیره آن‌ها، دکمه «ثبت نهایی اطلاعات ماه» را در بالای صفحه بزنید؛ ماه‌های دیگر دست‌نخورده می‌مانند.</p></article>`
+      : `<article class="settings-context"><b>تنظیمات ماه‌های ثبت‌نشده</b><p>تنظیمات اولویت هر گروه به‌عنوان الگوی ماه‌های ثبت‌نشده ذخیره می‌شود. پس از نهایی کردن یک ماه، برای اصلاح تنظیمات همان ماه به آن ماه برگردید.</p></article>`;
+
+    const cards = state.groups.map((sourceGroup, groupIndex) => {
+      const config = ctx.groupConfigs[groupIndex] || { group: sourceGroup, sections: state.sections };
+      const group = config.group;
+      const sections = config.sections || state.sections;
+      const activeIds = group.active || [];
+      const priorityIds = (group.prioritySections || activeIds).filter(id => activeIds.includes(id));
+      const activeSections = sections.filter(section => activeIds.includes(section.id));
+      const optionSections = sections;
+      const orderedSections = priorityIds.map(id => activeSections.find(section => section.id === id)).filter(Boolean);
+
+      const activeBlock = optionSections.length
+        ? `<div class="checks section-checks">${optionSections.map(section => `<label class="check">
+            <input type="checkbox" data-change="toggle-sec" data-g="${sourceGroup.id}" data-s="${section.id}" ${activeIds.includes(section.id) ? 'checked' : ''}>
+            ${esc(section.name)}
+          </label>`).join('')}</div>`
+        : '<p class="empty small">ابتدا از تب «بخش‌ها» بخش تعریف کنید.</p>';
+
+      const priorityBlock = activeSections.length
+        ? `<div class="checks priority-checks">${activeSections.map(section => `<label class="check priority-check">
+            <input type="checkbox" data-change="toggle-priority" data-g="${sourceGroup.id}" data-s="${section.id}" ${priorityIds.includes(section.id) ? 'checked' : ''}>
+            ${esc(section.name)}
+          </label>`).join('')}</div>`
+        : '<p class="empty small">ابتدا حداقل یک بخش را در مرحله قبل فعال کنید.</p>';
+
+      return `<article class="card group-card">
+        <div class="head group-title">
+          <span class="rank">${fa(groupIndex + 1)}</span>
+          <input class="inline" type="text" value="${esc(sourceGroup.name)}" data-change="rename-group" data-g="${sourceGroup.id}" aria-label="نام گروه">
+          <button class="btn danger sm" data-act="del-group" data-g="${sourceGroup.id}">حذف گروه</button>
+        </div>
+
+        <section class="config-step">
+          <div class="step-title"><span>۱</span><div><b>بخش‌های فعال این گروه</b><small>بخش‌هایی که آمارشان ثبت و در گزارش نمایش داده می‌شود.</small></div></div>
+          ${activeBlock}
+        </section>
+
+        <section class="config-step">
+          <div class="step-title"><span>۲</span><div><b>انتخاب بخش‌های مشمول اولویت‌بندی</b><small>از بین بخش‌های فعال، فقط موارد انتخاب‌شده در پیشنهاد خودکار چرخش شرکت می‌کنند.</small></div></div>
+          ${priorityBlock}
+        </section>
+
+        <section class="config-step">
+          <div class="step-title"><span>۳</span><div><b>ترتیب برتری در زمان تساوی</b><small>از بالا به پایین؛ وقتی درصد حضور برابر باشد، بخش بالاتر زودتر انتخاب می‌شود.</small></div></div>
+          ${reorderItems(group, orderedSections)}
+        </section>
+
+        <div class="settings-rule">بخش‌های فعالِ انتخاب‌نشده در مرحله ۲ از آمار و گزارش حذف نمی‌شوند؛ فقط در محاسبه تعادل اولویت و پیشنهاد چرخش خودکار شرکت نمی‌کنند.</div>
+
+        <div class="members-area">
+          <h4>اعضا (${fa(sourceGroup.members.length)})</h4>
+          <ul class="members">${sourceGroup.members.map(member => `<li>${esc(member.name)}<button class="x" data-act="del-member" data-g="${sourceGroup.id}" data-m="${member.id}" aria-label="حذف">✕</button></li>`).join('')}</ul>
+          <div class="addrow"><textarea id="mem-${sourceGroup.id}" rows="2" placeholder="نام‌ها؛ هر نام در یک خط یا با ویرگول جدا"></textarea><button class="btn" data-act="add-members" data-g="${sourceGroup.id}">افزودن اعضا</button></div>
+          <button class="btn ghost sm" data-act="reset-counts" data-g="${sourceGroup.id}">صفر کردن آمار پیش‌نویس این ماه</button>
+        </div>
+      </article>`;
+    }).join('');
+
+    return `<p class="subtle">تنظیمات گروه‌ها برای ماه انتخاب‌شده (${monthTitle(period)}) نمایش داده می‌شود.</p>${intro}${addGroup}${cards}`;
   },
 
   sections({ state }) {
-    return `<article class="card"><div class="addrow"><input type="text" id="newSec" placeholder="نام بخش (مثلاً تریاژ)"><button class="btn" data-act="add-section">افزودن</button></div>
-      ${state.sections.length ? '' : '<button class="btn ghost sm" data-act="seed-sections">افزودن بخش‌های پیشنهادی</button>'}</article>` +
-      state.sections.map(s => `<article class="card head"><input class="inline" type="text" value="${esc(s.name)}" data-change="rename-section" data-s="${s.id}"><button class="btn danger sm" data-act="del-section" data-s="${s.id}">حذف</button></article>`).join('');
+    return `<article class="card"><div class="addrow">
+      <input type="text" id="newSec" placeholder="نام بخش (مثلاً تریاژ)">
+      <button class="btn" data-act="add-section">افزودن</button>
+    </div>${state.sections.length ? '' : '<button class="btn ghost sm" data-act="seed-sections">افزودن بخش‌های پیشنهادی</button>'}</article>` +
+      state.sections.map(section => `<article class="card head section-edit-row">
+        <input class="inline" type="text" value="${esc(section.name)}" data-change="rename-section" data-s="${section.id}">
+        <button class="btn danger sm" data-act="del-section" data-s="${section.id}">حذف</button>
+      </article>`).join('');
   },
 
   data(ctx) {
-    const records = Object.entries(ctx.state.records || {}).filter(([, r]) => r.finalizedAt).sort((a, b) => b[0].localeCompare(a[0]));
+    const records = Object.entries(ctx.state.records || {})
+      .filter(([, record]) => record.finalizedAt)
+      .sort((a, b) => b[0].localeCompare(a[0]));
     const history = records.length
       ? `<ul class="record-list">${records.map(([key, record]) => {
           const [year, month] = key.split('-').map(Number);
-          return `<li><b>${JALALI_MONTHS[month - 1]} ${year.toLocaleString('fa-IR', { useGrouping: false })}</b><span>${formatJalaliDateTime(record.finalizedAt)}</span></li>`;
+          return `<li>
+            <div><b>${JALALI_MONTHS[month - 1]} ${year.toLocaleString('fa-IR', { useGrouping: false })}</b><span>${formatJalaliDateTime(record.finalizedAt)}</span></div>
+            <button class="btn ghost sm" data-act="edit-record-priority" data-p="${key}">تنظیم اولویت این ماه</button>
+          </li>`;
         }).join('')}</ul>`
       : '<p class="empty small">هنوز هیچ ماهی ثبت نهایی نشده است.</p>';
-    const legacy = ctx.state.groups.some(g => g.members.some(m => Object.values(m.legacyTotals || {}).some(n => n > 0)));
+    const legacy = ctx.state.groups.some(group => group.members.some(member =>
+      Object.values(member.legacyTotals || {}).some(count => count > 0)));
+
     return `<article class="card"><h4>وضعیت ثبت نهایی</h4>
       <p>تعداد ماه‌های ثبت نهایی‌شده: <b>${fa(records.length)}</b></p>
       <p>تاریخ و ساعت دقیق آخرین ثبت نهایی: <b>${ctx.lastFinalizedAt ? formatJalaliDateTime(ctx.lastFinalizedAt) : 'هنوز ثبت نهایی انجام نشده است'}</b></p>
-      <h4>سوابق ثبت‌شده</h4>${history}</article>
+      <h4>سوابق ثبت‌شده و تنظیم اولویت هر ماه</h4>${history}</article>
       <article class="card"><h4>خروجی و بازیابی اطلاعات</h4>
-        <p>فایل JSON فقط شامل تنظیمات و ماه‌هایی است که ثبت نهایی شده‌اند. پیش‌نویس فعلی در خروجی قرار نمی‌گیرد.</p>
+        <p>فایل JSON شامل تنظیمات گروه‌ها، ترتیب اولویت‌ها و سوابق ماه‌هایی است که ثبت نهایی شده‌اند. پیش‌نویس جاری در خروجی قرار نمی‌گیرد.</p>
         <div class="row"><button class="btn" data-act="export">خروجی JSON (سوابق نهایی)</button><button class="btn ghost" data-act="import">ورود از JSON</button></div>
       </article>
-      ${legacy ? `<article class="card"><h4>آمار نسخه قبلی</h4><p class="subtle">آمار نسخه قبلی که تاریخ ماهانه نداشته، حفظ شده است؛ برای جلوگیری از نسبت دادن اشتباه، در گزارش ماهانه محاسبه نمی‌شود.</p></article>` : ''}
+      ${legacy ? `<article class="card"><h4>آمار نسخه قبلی</h4><p class="subtle">آمار نسخه قبلی که ماه و سال مشخصی نداشته، حفظ شده است؛ برای جلوگیری از نسبت دادن اشتباه، در گزارش ماهانه محاسبه نمی‌شود.</p></article>` : ''}
       ${ctx.canInstall ? `<article class="card"><div class="row"><button class="btn" data-act="install">نصب برنامه روی دستگاه</button></div></article>` : ''}
       <article class="card"><div class="row"><button class="btn danger" data-act="reset-all">پاک کردن همه داده‌ها</button></div></article>`;
   }
