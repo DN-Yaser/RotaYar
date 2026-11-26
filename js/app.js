@@ -474,6 +474,16 @@ const changes = {
 };
 
 document.addEventListener('click', event => {
+  // باز و بسته کردن منوی اولویت نباید باعث انتخاب ردیف و بازترسیم کل گزارش شود.
+  const priorityMenu = event.target.closest('.priority-dropdown');
+  if (priorityMenu) {
+    if (event.target.closest('summary') && !priorityMenu.open) {
+      document.querySelectorAll('.priority-dropdown[open]').forEach(menu => {
+        if (menu !== priorityMenu) menu.removeAttribute('open');
+      });
+    }
+    return;
+  }
   const actionElement = event.target.closest('[data-act]');
   if (actionElement) return actions[actionElement.dataset.act]?.(actionElement.dataset, actionElement);
   const tabElement = event.target.closest('[data-tab]');

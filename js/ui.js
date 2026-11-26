@@ -118,7 +118,17 @@ export const views = {
             <td class="c-name"><span class="rank sm">${fa(index + 1)}</span>${esc(row.member.name)}</td>
             <td><span class="badge ${badgeClass}">${row.priorityTotal ? fa(row.balance * 100) + '٪' : '—'}</span></td>
             ${row.counts.map((count, cellIndex) => `<td><b>${fa(count)}</b><small>${fa(row.pct[cellIndex])}٪</small></td>`).join('')}
-            <td class="c-next">${row.priority.length ? esc(row.priority[0].name) : '—'}</td>
+            <td class="c-next">${row.priority.length ? `<details class="priority-dropdown">
+              <summary aria-label="نمایش همه اولویت‌های ${esc(row.member.name)}" title="برای مشاهده همه اولویت‌ها باز کنید">
+                <span class="priority-dropdown-rank">${fa(1)}</span>
+                <span class="priority-dropdown-first">${esc(row.priority[0].name)}</span>
+                <span class="priority-dropdown-arrow" aria-hidden="true">⌄</span>
+              </summary>
+              <ol>${row.priority.map((item, priorityIndex) => `<li>
+                <span class="priority-dropdown-number">${fa(priorityIndex + 1)}</span>
+                <span class="priority-dropdown-name">${esc(item.name)}</span>
+              </li>`).join('')}</ol>
+            </details>` : '—'}</td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>`;
