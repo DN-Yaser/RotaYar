@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>چرخش‌یار | مدیریت چرخش پرسنل اورژانس</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top"><h1>چرخش‌یار</h1><p>مدیریت متعادل چرخش پرسنل اورژانس</p></header>
+<main id="view"></main>
+<nav class="tabs" id="tabs">
+  <button data-tab="report">گزارش</button>
+  <button data-tab="rotate">چرخش</button>
+  <button data-tab="groups">گروه‌ها</button>
+  <button data-tab="sections">بخش‌ها</button>
+  <button data-tab="data">داده‌ها</button>
+</nav>
+<div id="toast" role="status"></div>
+<input type="file" id="file" accept=".json,application/json" hidden>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
