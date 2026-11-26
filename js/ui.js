@@ -22,16 +22,48 @@ export const views = {
     const rows = stats(g, ctx.state.sections);
     if (!rows.length || !rows[0].act.length)
       return picker(ctx) + empty('برای این گروه عضو یا بخش فعال تعریف نشده است.<br>از تب «گروه‌ها» تکمیل کنید.');
-    return picker(ctx) + rows.map((r, i) => {
-      const [cls, label] = level(r);
-      const btn = (s, d, t) => `<button data-act="cnt" data-g="${g.id}" data-m="${r.member.id}" data-s="${s.id}" data-d="${d}" aria-label="${d > 0 ? 'اضافه' : 'کم'} کردن">${t}</button>`;
-      return `<article class="card"><div class="head"><span class="rank">${fa(i + 1)}</span><b>${esc(r.member.name)}</b><span class="badge ${cls}">${label}</span></div>
-      ${r.act.map((s, j) => `<div class="sec"><span class="sname">${esc(s.name)}</span>
-        <div class="track"><i style="width:${r.pct[j]}%;background:${color(j)}"></i></div>
-        <span class="pct">${fa(r.pct[j])}٪</span>
-        <span class="stepper">${btn(s, -1, '−')}<output>${fa(r.counts[j])}</output>${btn(s, 1, '+')}</span></div>`).join('')}
-      <div class="prio">اولویت قرارگیری بعدی: ${r.total ? r.priority.map((p, k) => `<span class="chip">${fa(k + 1)}. ${esc(p.name)}</span>`).join('') : 'بدون سابقه؛ همه بخش‌ها هم‌اولویت'}</div></article>`;
-    }).join('');
+
+    // --- فرم ثبت اطلاعات: انتخاب فرد از منوی کشویی ---
+    const sorted = g.members.filter(m => !ctx.q || m.name.includes(ctx.q) || m.id === ctx.mid).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    const sel = rows.find(r => r.member.id === ctx.mid) || null;
+    const btn = (s, d, t) => `<button data-act="cnt" data-g="${g.id}" data-m="${sel.member.id}" data-s="${s.id}" data-d="${d}" aria-label="${d > 0 ? 'اضافه' : 'کم'} کردن">${t}</button>`;
+    const entry = `<article class="card entry">
+      <h4>ثبت اطلاعات فرد</h4>
+      <input type="search" id="memFilter" class="filter" placeholder="جستجوی نام..." autocomplete="off" value="${esc(ctx.q || '')}">
+      <div class="pickrow">
+        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">›</button>
+        <select id="memSelect" data-change="pick-member">
+          <option value="">— انتخاب فرد (${fa(sorted.length)} نفر) —</option>
+          ${sorted.map(m => `<option value="${m.id}" ${m.id === ctx.mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
+        </select>
+        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">‹</button>
+      </div>
+      ${sel ? (() => {
+        const [cls, label] = level(sel);
+        return `<div class="head selhead"><b>${esc(sel.member.name)}</b><span class="badge ${cls}">${label}</span></div>
+        ${sel.act.map((s, j) => `<div class="sec big"><span class="sname">${esc(s.name)}</span>
+          <div class="track"><i style="width:${sel.pct[j]}%;background:${color(j)}"></i></div>
+          <span class="pct">${fa(sel.pct[j])}٪</span>
+          <span class="stepper">${btn(s, -1, '−')}<output>${fa(sel.counts[j])}</output>${btn(s, 1, '+')}</span></div>`).join('')}
+        <div class="prio">اولویت قرارگیری بعدی: ${sel.total ? sel.priority.map((p, k) => `<span class="chip">${fa(k + 1)}. ${esc(p.name)}</span>`).join('') : 'بدون سابقه؛ همه بخش‌ها هم‌اولویت'}</div>`;
+      })() : '<p class="empty small">یک نام را از منوی بالا انتخاب کنید تا بخش‌هایش را ثبت کنید.</p>'}
+    </article>`;
+
+    // --- جدول مرتب‌شده بر اساس اولویت (تعادل) ---
+    const act = rows[0].act;
+    const table = `<h4>جدول اولویت‌بندی (از متعادل‌ترین به نامتعادل‌ترین)</h4>
+    <div class="twrap"><table class="rt">
+      <thead><tr><th class="c-name">نام</th><th>تعادل</th>${act.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>اولویت بعدی</th></tr></thead>
+      <tbody>${rows.map((r, i) => {
+        const [cls, label] = level(r);
+        return `<tr data-act="select-member" data-m="${r.member.id}" class="${r.member.id === ctx.mid ? 'on' : ''}">
+          <td class="c-name"><span class="rank sm">${fa(i + 1)}</span>${esc(r.member.name)}</td>
+          <td><span class="badge ${cls}">${r.total ? fa(r.balance * 100) + '٪' : '—'}</span></td>
+          ${r.counts.map((c, j) => `<td><b>${fa(c)}</b><small>${fa(r.pct[j])}٪</small></td>`).join('')}
+          <td class="c-next">${r.total ? esc(r.priority[0].name) : '—'}</td></tr>`;
+      }).join('')}</tbody></table></div>`;
+
+    return picker(ctx) + entry + table;
   },
 
   rotate(ctx) {

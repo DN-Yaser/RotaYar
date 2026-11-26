@@ -5,6 +5,8 @@ import { views } from './ui.js';
 let state = load();
 let tab = 'report';
 let gid = state.groups[0]?.id;
+let mid = '';
+let q = '';
 let proposal = null;
 let installEvt = null;
 
@@ -19,7 +21,8 @@ function toast(msg) {
 function commit() { save(state); render(); }
 function render() {
   if (!group(gid)) gid = state.groups[0]?.id;
-  $('#view').innerHTML = views[tab]({ state, gid, proposal, canInstall: !!installEvt });
+  if (!group(gid)?.members.some(m => m.id === mid)) mid = '';
+  $('#view').innerHTML = views[tab]({ state, gid, mid, q, proposal, canInstall: !!installEvt });
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
 }
 
@@ -58,6 +61,13 @@ const actions = {
     const m = group(d.g).members.find(x => x.id === d.m);
     m.counts[d.s] = Math.max(0, (m.counts[d.s] || 0) + Number(d.d)); commit();
   },
+  'select-member'(d) { mid = d.m; render(); document.querySelector('.entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  'nav-member'(d) {
+    const list = [...group(gid).members].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    if (!list.length) return;
+    const i = list.findIndex(m => m.id === mid);
+    mid = list[(i + Number(d.d) + list.length) % list.length].id; render();
+  },
   'make-proposal'() { proposal = { gid, map: suggest(group(gid), state.sections) }; render(); },
   'apply-proposal'() {
     group(gid).members.forEach(m => { const s = proposal.map[m.id]; if (s) m.counts[s] = (m.counts[s] || 0) + 1; });
@@ -70,7 +80,8 @@ const actions = {
 };
 
 const changes = {
-  'pick-group'(d, el) { gid = el.value; proposal = null; render(); },
+  'pick-group'(d, el) { gid = el.value; mid = ''; q = ''; proposal = null; render(); },
+  'pick-member'(d, el) { mid = el.value; render(); },
   'rename-group'(d, el) { const n = el.value.trim(); if (n) group(d.g).name = n; commit(); },
   'rename-section'(d, el) { const n = el.value.trim(); const s = state.sections.find(x => x.id === d.s); if (n) s.name = n; commit(); },
   'toggle-sec'(d, el) {
@@ -86,6 +97,15 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target.closest('[data-change]'); if (t) changes[t.dataset.change]?.(t.dataset, t);
+});
+// جستجوی زنده‌ی نام: منوی کشویی فیلتر و اولین نتیجه انتخاب می‌شود
+document.addEventListener('input', e => {
+  if (e.target.id !== 'memFilter') return;
+  q = e.target.value.trim();
+  const hits = [...group(gid).members].filter(m => m.name.includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+  if (q && hits.length) mid = hits[0].id;
+  render();
+  const f = $('#memFilter'); f.focus(); f.setSelectionRange(f.value.length, f.value.length);
 });
 $('#file').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
