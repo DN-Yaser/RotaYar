@@ -69,7 +69,19 @@ h4{margin:12px 0 8px;font-size:.85rem;color:var(--mut)}
 .rt .c-name{text-align:right;position:sticky;right:0;background:var(--card);z-index:1;font-weight:700;min-width:130px;box-shadow:-1px 0 0 var(--bd) inset}
 .rt th.c-name{background:var(--soft);z-index:2}
 .rt tr.on td.c-name{background:var(--soft)}
-.rt .c-next{color:var(--pri);font-weight:700}
+.rt .c-next{color:var(--pri);font-weight:700;width:158px;min-width:150px;white-space:normal;padding:6px}
+.priority-dropdown{width:100%;text-align:right;font-weight:400;color:var(--tx)}
+.priority-dropdown summary{list-style:none;display:flex;align-items:center;gap:6px;min-height:32px;padding:5px 7px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);cursor:pointer;user-select:none}
+.priority-dropdown summary::-webkit-details-marker{display:none}
+.priority-dropdown-rank{display:grid;place-items:center;flex:0 0 20px;height:20px;border-radius:6px;background:var(--soft);color:var(--pri);font-size:.7rem;font-weight:700}
+.priority-dropdown-first{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--pri);font-size:.74rem;font-weight:700}
+.priority-dropdown-arrow{flex:0 0 auto;color:var(--mut);font-size:.85rem;transition:transform .15s}
+.priority-dropdown[open] .priority-dropdown-arrow{transform:rotate(180deg)}
+.priority-dropdown ol{list-style:none;margin:5px 0 0;padding:4px 6px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);text-align:right}
+.priority-dropdown li{display:flex;align-items:center;gap:7px;padding:5px 2px;border-bottom:1px solid var(--bd);white-space:normal;font-size:.73rem;font-weight:400}
+.priority-dropdown li:last-child{border-bottom:0}
+.priority-dropdown-number{display:grid;place-items:center;flex:0 0 19px;height:19px;border-radius:6px;background:var(--soft);color:var(--pri);font-size:.68rem;font-weight:700}
+.priority-dropdown-name{min-width:0;overflow-wrap:anywhere;color:var(--tx)}
 .rank.sm{display:inline-grid;width:22px;height:22px;font-size:.7rem;margin-inline-end:6px;vertical-align:middle}
 
 /* --- تقویم ماهانه جلالی و ثبت نهایی --- */
