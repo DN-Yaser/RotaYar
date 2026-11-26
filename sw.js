@@ -1,5 +1,5 @@
 // نسخه را با هر تغییر مهم افزایش دهید تا کش قدیمی پاک شود
-const V = 'rotayar-v1';
+const V = 'rotayar-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './css/style.css',
   './js/app.js', './js/ui.js', './js/logic.js', './js/storage.js',
   './shabnam.ttf', './shabnam_bold.ttf', './icon.png'];
