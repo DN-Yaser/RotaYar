@@ -105,3 +105,50 @@ h4{margin:12px 0 8px;font-size:.85rem;color:var(--mut)}
   .record-list li{flex-direction:column;gap:2px}
   .record-list li span{text-align:right}
 }
+
+/* --- پنل مرحله‌ای انتخاب و ترتیب اولویت بخش‌ها --- */
+.settings-context{background:var(--soft);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:.83rem;line-height:1.9}
+.settings-context b{display:block;color:var(--pri);margin-bottom:3px}
+.settings-context p{margin:0;color:var(--mut)}
+.settings-context.historical{background:#fff7e6;border-color:#f2d69b;color:#704b0b}
+@media(prefers-color-scheme:dark){.settings-context.historical{background:#332817;border-color:#6c5127;color:#f3d69d}}
+.group-card{padding:14px}
+.group-title{margin-bottom:14px}
+.group-title .rank{flex:0 0 30px}
+.group-title input.inline{min-width:0;flex:1}
+.group-title .btn{flex:0 0 auto}
+.config-step{padding:12px 0;border-top:1px solid var(--bd)}
+.step-title{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
+.step-title>span{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:var(--soft);color:var(--pri);font-weight:700}
+.step-title>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.step-title b{font-size:.86rem}
+.step-title small{color:var(--mut);font-size:.73rem;line-height:1.7}
+.section-checks,.priority-checks{margin:0}
+.section-checks .check,.priority-checks .check{border-radius:10px;padding:8px 11px}
+.priority-checks .priority-check{background:var(--soft);border-color:transparent}
+.priority-order{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.priority-order li{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg)}
+.priority-order li strong{flex:1;font-size:.85rem}
+.priority-rank{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:var(--soft);color:var(--pri);font-weight:700;font-size:.78rem}
+.priority-actions{display:flex;gap:5px}
+.order-btn{width:34px;height:32px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--pri);font:inherit;font-size:1.05rem;cursor:pointer}
+.order-btn:disabled{opacity:.3;cursor:not-allowed}
+.settings-rule{padding:9px 11px;background:var(--bg);border-radius:9px;color:var(--mut);font-size:.73rem;line-height:1.9;margin-top:3px}
+.members-area{border-top:1px dashed var(--bd);margin-top:12px;padding-top:6px}
+.members-area h4{margin-top:8px}
+.section-edit-row{margin-bottom:8px}
+.rotation-note{border-color:var(--pri)}
+.rotation-note p{margin:4px 0 10px;color:var(--mut);font-size:.8rem;line-height:1.8}
+.rotation-note .priority-chips{margin:0 0 12px}
+.priority-hint{display:block;margin-top:5px;color:var(--mut);font-size:.7rem}
+.record-list li{flex-wrap:wrap}
+.record-list li>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.record-list li .btn{align-self:center}
+@media(max-width:520px){
+  .group-title{flex-wrap:wrap}
+  .group-title input.inline{flex-basis:calc(100% - 45px)}
+  .group-title .btn{margin-right:38px}
+  .priority-order li{padding:7px}
+  .record-list li{align-items:stretch}
+  .record-list li .btn{width:100%}
+}
