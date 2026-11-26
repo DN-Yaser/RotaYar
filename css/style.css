@@ -44,3 +44,30 @@ h4{margin:12px 0 8px;font-size:.85rem;color:var(--mut)}
 .prop{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;margin:6px 0}
 #toast{position:fixed;bottom:84px;inset-inline:16px;margin:auto;max-width:360px;background:#1b2430;color:#fff;text-align:center;padding:10px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:9}
 #toast.show{opacity:1;transform:none}
+
+/* --- فرم ثبت اطلاعات و جدول گزارش --- */
+.entry{border-color:var(--pri)}
+.entry h4{margin-top:0}
+.filter{font:inherit;width:100%;padding:9px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);margin-bottom:8px}
+.pickrow{display:flex;gap:6px;align-items:stretch}
+.pickrow select{flex:1;font-weight:700}
+.nav{width:44px;border:1px solid var(--bd);border-radius:10px;background:var(--soft);color:var(--pri);font:inherit;font-size:1.4rem;cursor:pointer}
+.selhead{margin:14px 0 4px}
+.sec.big{grid-template-columns:86px 1fr 44px auto;margin:10px 0}
+.sec.big .stepper{gap:8px}
+.sec.big .stepper button{width:38px;height:38px;font-size:1.2rem;background:var(--soft);color:var(--pri);border-color:transparent}
+.sec.big .stepper output{min-width:26px;font-weight:700;font-size:.95rem}
+.empty.small{padding:18px 6px;font-size:.85rem}
+.twrap{overflow-x:auto;border:1px solid var(--bd);border-radius:var(--r);background:var(--card);margin-bottom:12px}
+.rt{border-collapse:separate;border-spacing:0;width:100%;font-size:.82rem;text-align:center}
+.rt th{background:var(--soft);color:var(--pri);padding:9px 8px;white-space:nowrap;position:sticky;top:0}
+.rt td{padding:8px;border-top:1px solid var(--bd);white-space:nowrap}
+.rt td b{display:block}
+.rt td small{color:var(--mut);font-size:.7rem}
+.rt tbody tr{cursor:pointer}
+.rt tbody tr.on td{background:var(--soft)}
+.rt .c-name{text-align:right;position:sticky;right:0;background:var(--card);z-index:1;font-weight:700;min-width:130px;box-shadow:-1px 0 0 var(--bd) inset}
+.rt th.c-name{background:var(--soft);z-index:2}
+.rt tr.on td.c-name{background:var(--soft)}
+.rt .c-next{color:var(--pri);font-weight:700}
+.rank.sm{display:inline-grid;width:22px;height:22px;font-size:.7rem;margin-inline-end:6px;vertical-align:middle}
