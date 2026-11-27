@@ -1,4 +1,4 @@
-import { stats, suggest, normalizedWeights } from './logic.js';
+import { stats, suggest, recommendationOptions, normalizedWeights } from './logic.js';
 import { JALALI_MONTHS, monthTitle, formatJalaliDate, formatJalaliDateTime } from './calendar.js';
 
 export const esc = value => String(value).replace(/[&<>"']/g, character => ({
@@ -79,12 +79,12 @@ export const views = {
       <h4>ثبت اطلاعات فرد در ${monthTitle(ctx.period)}</h4>
       <input type="search" id="memFilter" class="filter" placeholder="جستجوی نام..." autocomplete="off" value="${esc(ctx.q || '')}">
       <div class="pickrow">
-        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">›</button>
+        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">‹</button>
         <select id="memSelect" data-change="pick-member">
-          <option value="">— انتخاب فرد (${fa(filteredMembers.length)} نفر) —</option>
+          <option value="">انتخاب پرسنل (${fa(filteredMembers.length)} نفر)</option>
           ${filteredMembers.map(member => `<option value="${member.id}" ${member.id === ctx.mid ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}
         </select>
-        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">‹</button>
+        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">›</button>
       </div>
       ${selected ? (() => {
         const [badgeClass, label] = level(selected);
@@ -95,37 +95,37 @@ export const views = {
           <span class="pct">${fa(selected.pct[index])}٪</span>
           <span class="stepper">${counterButton(section, -1, '−')}<output>${fa(selected.counts[index])}</output>${counterButton(section, 1, '+')}</span>
         </div>`).join('')}
-        <div class="prio"><b>اولویت حضور بعدی:</b> ${selected.priority.length
-          ? selected.priority.map((item, index) => `<span class="chip">${fa(index + 1)}. ${esc(item.name)}</span>`).join('')
-          : 'هیچ بخش اولویت‌داری انتخاب نشده است.'}
-          <small class="priority-hint">بخش‌های خارج از اولویت همچنان در آمار ثبت می‌شوند.</small>
+        <div class="prio"><b>بار وزنی فعلی:</b> <strong>${fa(selected.weightedLoad)}</strong>
+          <small class="priority-hint">رتبه‌بندی و پیشنهاد تخصیص بر اساس وزن بخش‌ها و تعداد حضور ثبت‌شده محاسبه می‌شود.</small>
         </div>`;
       })() : '<p class="empty small">یک نام را از منوی بالا انتخاب کنید تا بخش‌هایش را ثبت کنید.</p>'}
     </article>`;
 
     const columns = rows[0].act;
     const recommendations = suggest(group, ctx.monthSections);
-    const recommendationName = memberId => { const sectionId = recommendations[memberId]; return columns.find(section => section.id === sectionId)?.name || '—'; };
-    const table = `<h4>رتبه‌بندی بر اساس بار امتیازی وزنی</h4>
-      <p class="subtle">رتبه کمتر یعنی بار وزنی کمتری از بخش‌های اولویت‌دار دریافت کرده و برای بخش‌های پرامتیاز در اولویت تخصیص است. وزن بخش‌های خارج از اولویت صفر است.</p>
+    const optionsByMember = recommendationOptions(group, ctx.monthSections, recommendations);
+    const table = `<h4>رتبه‌بندی و پیشنهاد تخصیص بر اساس بار امتیازی وزنی</h4>
+      <p class="subtle">ترتیب اولویت بخش‌ها فقط در تنظیمات گروه، وزن و اهمیت نسبی بخش‌ها را تعیین می‌کند. پیشنهاد اول این ستون، نتیجه نهایی الگوریتم با درنظرگرفتن بار فعلی همه افراد و ظرفیت تقریباً برابر بخش‌هاست؛ گزینه‌های بعدی، جایگزین‌های همان فرد هستند که بر اساس نزدیک‌تر کردن بار پیش‌بینی‌شده او به میانگین گروه مرتب شده‌اند.</p>
       <div class="twrap"><table class="rt">
-        <thead><tr><th class="c-name">رتبه</th><th>نام</th><th>بار وزنی</th><th>کل حضور</th>${columns.map(section => `<th>${esc(section.name)}</th>`).join('')}<th>پیشنهاد تخصیص</th><th>ترتیب اولویت بخش‌ها</th></tr></thead>
+        <thead><tr><th class="c-name">رتبه</th><th>نام</th><th>بار وزنی</th><th>کل حضور</th>${columns.map(section => `<th>${esc(section.name)}</th>`).join('')}<th>پیشنهاد تخصیص و گزینه‌های جایگزین</th></tr></thead>
         <tbody>${rows.map((row, index) => {
           const [badgeClass] = level(row);
+          const options = optionsByMember[row.member.id] || [];
+          const first = options[0];
           return `<tr data-act="select-member" data-m="${row.member.id}" class="${row.member.id === ctx.mid ? 'on' : ''}">
             <td><span class="rank sm">${fa(index + 1)}</span></td><td class="c-name">${esc(row.member.name)}</td>
             <td><span class="badge ${badgeClass}">${fa(row.weightedLoad)}</span></td><td>${fa(row.total)}</td>
             ${row.counts.map((count, cellIndex) => `<td><b>${fa(count)}</b><small>${fa(row.pct[cellIndex])}٪</small></td>`).join('')}
-            <td><strong class="suggested-section">${esc(recommendationName(row.member.id))}</strong></td>
-            <td class="c-next">${row.priority.length ? `<details class="priority-dropdown">
-              <summary aria-label="نمایش همه اولویت‌های ${esc(row.member.name)}" title="برای مشاهده همه اولویت‌ها باز کنید">
+            <td class="c-next">${first ? `<details class="priority-dropdown">
+              <summary aria-label="نمایش پیشنهاد و گزینه‌های جایگزین ${esc(row.member.name)}" title="برای مشاهده همه گزینه‌ها باز کنید">
                 <span class="priority-dropdown-rank">${fa(1)}</span>
-                <span class="priority-dropdown-first">${esc(row.priority[0].name)}</span>
+                <span class="priority-dropdown-first">${esc(first.name)}</span>
                 <span class="priority-dropdown-arrow" aria-hidden="true">⌄</span>
               </summary>
-              <ol>${row.priority.map((item, priorityIndex) => `<li>
-                <span class="priority-dropdown-number">${fa(priorityIndex + 1)}</span>
-                <span class="priority-dropdown-name">${esc(item.name)}</span>
+              <ol>${options.map((item, optionIndex) => `<li class="${item.assigned ? 'is-assigned' : 'is-alternative'}">
+                <span class="priority-dropdown-number">${fa(optionIndex + 1)}</span>
+                <span class="priority-option-copy"><span class="priority-dropdown-name">${esc(item.name)}</span><small>${item.assigned ? 'پیشنهاد نهایی الگوریتم' : 'گزینه جایگزین'} · وزن ${fa(item.weight)} · بار پس از تخصیص ${fa(item.projectedLoad)}</small></span>
+                ${item.assigned ? '<span class="assigned-mark">پیشنهاد</span>' : ''}
               </li>`).join('')}</ol>
             </details>` : '—'}</td>
           </tr>`;

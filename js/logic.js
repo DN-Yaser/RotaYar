@@ -53,3 +53,50 @@ export function suggest(group, sections) {
   }
   return output;
 }
+
+
+/**
+ * برای هر فرد، پیشنهاد نهایی الگوریتم را در رتبه اول می‌گذارد؛ گزینه‌های
+ * جایگزین بر اساس نزدیک‌تر کردن بار وزنی پیش‌بینی‌شده فرد به میانگین
+ * بار وزنی پیش‌بینی‌شده گروه مرتب می‌شوند. این فهرست با ترتیب تنظیمات
+ * گروه یکی نیست: اولی خروجی شخصی‌شده تخصیص است و دومی فقط قاعده/وزن‌هاست.
+ */
+export function recommendationOptions(group, sections, assignments = suggest(group, sections)) {
+  const rows = stats(group, sections);
+  if (!rows.length || !rows[0].priorityAct.length) return {};
+
+  const weightOf = new Map(rows[0].priorityAct.map(section => [section.id, rows[0].weights[section.id]]));
+  const assignedWeights = rows
+    .map(row => weightOf.get(assignments[row.member.id]))
+    .filter(value => Number.isFinite(value));
+  const meanCurrentLoad = rows.reduce((sum, row) => sum + row.weightedLoad, 0) / rows.length;
+  const meanAssignedWeight = assignedWeights.length
+    ? assignedWeights.reduce((sum, value) => sum + value, 0) / assignedWeights.length
+    : 0;
+  const targetProjectedLoad = meanCurrentLoad + meanAssignedWeight;
+
+  return Object.fromEntries(rows.map(row => {
+    const assignedId = assignments[row.member.id];
+    const options = row.priorityAct.map((section, index) => {
+      const weight = row.weights[section.id] || 0;
+      const projectedLoad = row.weightedLoad + weight;
+      return {
+        id: section.id,
+        name: section.name,
+        weight,
+        projectedLoad,
+        distanceToTarget: Math.abs(projectedLoad - targetProjectedLoad),
+        groupOrder: index,
+        assigned: section.id === assignedId
+      };
+    });
+
+    const selected = options.filter(option => option.assigned);
+    const alternatives = options.filter(option => !option.assigned).sort((a, b) =>
+      a.distanceToTarget - b.distanceToTarget ||
+      b.weight - a.weight ||
+      a.groupOrder - b.groupOrder
+    );
+    return [row.member.id, [...selected, ...alternatives]];
+  }));
+}
