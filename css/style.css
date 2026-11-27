@@ -164,3 +164,12 @@ h4{margin:12px 0 8px;font-size:.85rem;color:var(--mut)}
   .record-list li{align-items:stretch}
   .record-list li .btn{width:100%}
 }
+
+/* بار امتیازی وزنی و کنترل وزن نسبی بخش‌ها */
+.weight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:14px 0 8px}
+.weight-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line,#2b3542);border-radius:12px;background:var(--surface-2,#111923);font-size:.9rem}
+.weight-item span{display:flex;flex-direction:column;gap:3px;font-weight:700}
+.weight-item small{font-size:.72rem;color:var(--muted,#98a5b5);font-weight:400}
+.weight-item input{width:68px;min-width:0;padding:7px 5px;text-align:center;border:1px solid var(--line,#34404e);border-radius:8px;background:var(--surface,#0e151e);color:inherit;font:inherit}
+.suggested-section{display:inline-flex;padding:5px 9px;border-radius:8px;background:rgba(16,185,129,.13);color:var(--accent,#20c9ae);white-space:nowrap}
+.rt td .badge{font-variant-numeric:tabular-nums}
