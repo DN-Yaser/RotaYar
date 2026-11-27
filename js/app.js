@@ -58,6 +58,7 @@ function buildGroupMeta(sourceGroup) {
     name: sourceGroup.name,
     active: [...sourceGroup.active],
     prioritySections: normalizePriority(sourceGroup.active, sourceGroup.prioritySections),
+    priorityWeights: { ...(sourceGroup.priorityWeights || {}) },
     sections: state.sections
       .filter(section => sourceGroup.active.includes(section.id))
       .map(section => ({ id: section.id, name: section.name })),
@@ -71,6 +72,7 @@ function ensureMonthGroupMeta(sourceGroup, key = currentPeriodKey()) {
   const item = metadata[sourceGroup.id];
   item.active = Array.isArray(item.active) ? [...item.active] : [...sourceGroup.active];
   item.prioritySections = normalizePriority(item.active, item.prioritySections ?? item.active);
+  item.priorityWeights = item.priorityWeights && typeof item.priorityWeights === 'object' ? item.priorityWeights : {};
   item.sections = Array.isArray(item.sections) ? item.sections : [];
   item.members = Array.isArray(item.members) ? item.members : [];
   return item;
@@ -107,6 +109,7 @@ function monthlyGroup(sourceGroup, key = currentPeriodKey()) {
         name: metadata.name || sourceGroup.name,
         active,
         prioritySections,
+        priorityWeights: { ...(metadata.priorityWeights || {}) },
         members
       },
       sections: [...sectionMap.values()]
@@ -117,6 +120,7 @@ function monthlyGroup(sourceGroup, key = currentPeriodKey()) {
     group: {
       ...sourceGroup,
       prioritySections: normalizePriority(sourceGroup.active, sourceGroup.prioritySections),
+      priorityWeights: { ...(sourceGroup.priorityWeights || {}) },
       members: sourceGroup.members.map(member => ({
         ...member,
         counts: { ...(groupData[member.id] || {}) }
@@ -222,7 +226,7 @@ const actions = {
     if (!name) return;
     const active = state.sections.map(section => section.id);
     const newGroup = {
-      id: uid(), name, active, prioritySections: [...active], members: []
+      id: uid(), name, active, prioritySections: [...active], priorityWeights: {}, members: []
     };
     state.groups.push(newGroup);
     gid = newGroup.id;
@@ -349,6 +353,7 @@ const actions = {
       const item = meta[currentGroup.id];
       item.active = Array.isArray(item.active) ? [...item.active] : [...currentGroup.active];
       item.prioritySections = normalizePriority(item.active, item.prioritySections ?? currentGroup.prioritySections);
+      item.priorityWeights = item.priorityWeights && typeof item.priorityWeights === 'object' ? item.priorityWeights : { ...(currentGroup.priorityWeights || {}) };
       item.sections = Array.isArray(item.sections) ? item.sections : [];
       item.members = Array.isArray(item.members) ? item.members : [];
 
@@ -468,6 +473,13 @@ const changes = {
         order = order.filter(id => id !== data.s);
       }
       config.prioritySections = order;
+    });
+  },
+  'set-priority-weight'(data, element) {
+    const value = Number(element.value);
+    if (!Number.isFinite(value) || value <= 0) { toast('وزن باید عددی بزرگ‌تر از صفر باشد.'); render(); return; }
+    editGroupConfig(data.g, config => {
+      config.priorityWeights = { ...(config.priorityWeights || {}), [data.s]: value };
     });
   },
   'set-prop'(data, element) { if (proposal) proposal.map[data.m] = element.value; }

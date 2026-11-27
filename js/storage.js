@@ -29,6 +29,7 @@ export function normalize(raw) {
       active,
       // اگر آرایه اولویت در نسخه قدیمی وجود نداشته، تمام بخش‌های فعال به ترتیب موجود اولویت می‌گیرند.
       prioritySections: configuredPriority.length || !active.length ? configuredPriority : [...active],
+      priorityWeights: group.priorityWeights && typeof group.priorityWeights === 'object' ? group.priorityWeights : {},
       members: (Array.isArray(group.members) ? group.members : []).map(member => ({
         id: String(member.id || uid()),
         name: String(member.name || '').trim(),
@@ -60,6 +61,7 @@ export function normalize(raw) {
         name: String(item.name || 'گروه'),
         active,
         prioritySections: configuredPriority.length || !active.length ? configuredPriority : [...active],
+        priorityWeights: item.priorityWeights && typeof item.priorityWeights === 'object' ? item.priorityWeights : {},
         sections: (Array.isArray(item.sections) ? item.sections : []).map(section => ({
           id: String(section.id || ''), name: String(section.name || '').trim()
         })).filter(section => section.id && section.name),

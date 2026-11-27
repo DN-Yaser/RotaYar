@@ -1,4 +1,4 @@
-import { stats } from './logic.js';
+import { stats, suggest, normalizedWeights } from './logic.js';
 import { JALALI_MONTHS, monthTitle, formatJalaliDate, formatJalaliDateTime } from './calendar.js';
 
 export const esc = value => String(value).replace(/[&<>"']/g, character => ({
@@ -12,11 +12,7 @@ const picker = ({ state, gid }) => state.groups.length
   ? `<div class="row"><select data-change="pick-group" aria-label="انتخاب گروه">${state.groups.map(item =>
     `<option value="${item.id}" ${item.id === gid ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></div>` : '';
 
-const level = row => {
-  if (!row.priorityTotal) return ['none', 'بدون سابقه در بخش‌های اولویت'];
-  const label = `تعادل ${fa(row.balance * 100)}٪`;
-  return [row.balance >= .8 ? 'good' : row.balance >= .5 ? 'mid' : 'bad', label];
-};
+const level = row => row.priorityTotal ? ['good', `بار وزنی ${fa(row.weightedLoad)}`] : ['none', 'بدون سابقه در بخش‌های اولویت'];
 
 function periodBar(ctx) {
   const status = ctx.dirty
@@ -83,12 +79,12 @@ export const views = {
       <h4>ثبت اطلاعات فرد در ${monthTitle(ctx.period)}</h4>
       <input type="search" id="memFilter" class="filter" placeholder="جستجوی نام..." autocomplete="off" value="${esc(ctx.q || '')}">
       <div class="pickrow">
-        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">‹</button>
+        <button class="nav" data-act="nav-member" data-d="1" aria-label="فرد بعدی">›</button>
         <select id="memSelect" data-change="pick-member">
           <option value="">— انتخاب فرد (${fa(filteredMembers.length)} نفر) —</option>
           ${filteredMembers.map(member => `<option value="${member.id}" ${member.id === ctx.mid ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}
         </select>
-        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">›</button>
+        <button class="nav" data-act="nav-member" data-d="-1" aria-label="فرد قبلی">‹</button>
       </div>
       ${selected ? (() => {
         const [badgeClass, label] = level(selected);
@@ -108,16 +104,19 @@ export const views = {
     </article>`;
 
     const columns = rows[0].act;
-    const table = `<h4>جدول اولویت‌بندی ماه ${JALALI_MONTHS[ctx.period.month - 1]}</h4>
-      <p class="subtle">امتیاز تعادل فقط بر اساس بخش‌های انتخاب‌شده در اولویت‌بندی محاسبه می‌شود؛ سایر بخش‌ها نیز در جدول و ثبت آمار باقی می‌مانند.</p>
+    const recommendations = suggest(group, ctx.monthSections);
+    const recommendationName = memberId => { const sectionId = recommendations[memberId]; return columns.find(section => section.id === sectionId)?.name || '—'; };
+    const table = `<h4>رتبه‌بندی بر اساس بار امتیازی وزنی</h4>
+      <p class="subtle">رتبه کمتر یعنی بار وزنی کمتری از بخش‌های اولویت‌دار دریافت کرده و برای بخش‌های پرامتیاز در اولویت تخصیص است. وزن بخش‌های خارج از اولویت صفر است.</p>
       <div class="twrap"><table class="rt">
-        <thead><tr><th class="c-name">نام</th><th>تعادل اولویت</th>${columns.map(section => `<th>${esc(section.name)}</th>`).join('')}<th>اولویت بعدی</th></tr></thead>
+        <thead><tr><th class="c-name">رتبه</th><th>نام</th><th>بار وزنی</th><th>کل حضور</th>${columns.map(section => `<th>${esc(section.name)}</th>`).join('')}<th>پیشنهاد تخصیص</th><th>ترتیب اولویت بخش‌ها</th></tr></thead>
         <tbody>${rows.map((row, index) => {
           const [badgeClass] = level(row);
           return `<tr data-act="select-member" data-m="${row.member.id}" class="${row.member.id === ctx.mid ? 'on' : ''}">
-            <td class="c-name"><span class="rank sm">${fa(index + 1)}</span>${esc(row.member.name)}</td>
-            <td><span class="badge ${badgeClass}">${row.priorityTotal ? fa(row.balance * 100) + '٪' : '—'}</span></td>
+            <td><span class="rank sm">${fa(index + 1)}</span></td><td class="c-name">${esc(row.member.name)}</td>
+            <td><span class="badge ${badgeClass}">${fa(row.weightedLoad)}</span></td><td>${fa(row.total)}</td>
             ${row.counts.map((count, cellIndex) => `<td><b>${fa(count)}</b><small>${fa(row.pct[cellIndex])}٪</small></td>`).join('')}
+            <td><strong class="suggested-section">${esc(recommendationName(row.member.id))}</strong></td>
             <td class="c-next">${row.priority.length ? `<details class="priority-dropdown">
               <summary aria-label="نمایش همه اولویت‌های ${esc(row.member.name)}" title="برای مشاهده همه اولویت‌ها باز کنید">
                 <span class="priority-dropdown-rank">${fa(1)}</span>
@@ -150,7 +149,7 @@ export const views = {
 
     let output = calendar + picker(ctx) + `<article class="card rotation-note">
       <h4>مبنای پیشنهاد چرخش</h4>
-      <p>پیشنهاد خودکار فقط بین بخش‌های انتخاب‌شده در اولویت‌بندی انجام می‌شود.</p>
+      <p>ابتدا بخش‌های با وزن بالاتر به افرادی تخصیص داده می‌شوند که بار وزنی تجمعی کمتری دارند. پس از هر تخصیص، بار پیش‌بینی‌شده فرد محاسبه می‌شود تا توزیع نهایی متعادل‌تر باشد.</p>
       <div class="priority-chips">${priority.map((section, index) => `<span class="chip">${fa(index + 1)}. ${esc(section.name)}</span>`).join('')}</div>
       <button class="btn" data-act="make-proposal">پیشنهاد چرخش بعدی برای این ماه</button>
     </article>`;
@@ -174,7 +173,7 @@ export const views = {
 
     const intro = historicalMode
       ? `<article class="settings-context historical"><b>در حال تنظیم سوابق ${monthTitle(period)}</b><p>تنظیمات بخش‌ها و اولویت‌ها فقط برای همین ماه تغییر می‌کند. برای ذخیره آن‌ها، دکمه «ثبت نهایی اطلاعات ماه» را در بالای صفحه بزنید؛ ماه‌های دیگر دست‌نخورده می‌مانند.</p></article>`
-      : `<article class="settings-context"><b>تنظیمات ماه‌های ثبت‌نشده</b><p>تنظیمات اولویت هر گروه به‌عنوان الگوی ماه‌های ثبت‌نشده ذخیره می‌شود. پس از نهایی کردن یک ماه، برای اصلاح تنظیمات همان ماه به آن ماه برگردید.</p></article>`;
+      : `<article class="settings-context"><b>تنظیمات ماه‌های ثبت‌نشده</b><p>تنظیمات اولویت و وزن هر گروه به‌عنوان الگوی ماه‌های ثبت‌نشده ذخیره می‌شود. پس از نهایی کردن یک ماه، برای اصلاح تنظیمات همان ماه به آن ماه برگردید.</p></article>`;
 
     const cards = state.groups.map((sourceGroup, groupIndex) => {
       const config = ctx.groupConfigs[groupIndex] || { group: sourceGroup, sections: state.sections };
@@ -218,11 +217,13 @@ export const views = {
         </section>
 
         <section class="config-step">
-          <div class="step-title"><span>۳</span><div><b>ترتیب برتری در زمان تساوی</b><small>از بالا به پایین؛ وقتی درصد حضور برابر باشد، بخش بالاتر زودتر انتخاب می‌شود.</small></div></div>
+          <div class="step-title"><span>۳</span><div><b>ترتیب اولویت و وزن نسبی بخش‌ها</b><small>ترتیب اولیه وزن را تعیین می‌کند؛ وزن بالاتر یعنی هر حضور اثر بیشتری بر بار تجمعی دارد.</small></div></div>
           ${reorderItems(group, orderedSections)}
+          <div class="weight-grid">${orderedSections.map((section, index) => { const defaults = orderedSections.length - index; const weight = normalizedWeights(group)[section.id] ?? defaults; return `<label class="weight-item"><span>${esc(section.name)}<small>وزن نسبی</small></span><input type="number" min="0.1" max="100" step="0.1" value="${weight}" data-change="set-priority-weight" data-g="${sourceGroup.id}" data-s="${section.id}" aria-label="وزن ${esc(section.name)}"></label>`; }).join('')}</div>
+          <small class="subtle">وزن اولیه به‌صورت خودکار از ترتیب اولویت ساخته می‌شود؛ می‌توانی آن را دستی تغییر بدهی. وزن بالاتر یعنی اثر بیشتر هر حضور در بار وزنی.</small>
         </section>
 
-        <div class="settings-rule">بخش‌های فعالِ انتخاب‌نشده در مرحله ۲ از آمار و گزارش حذف نمی‌شوند؛ فقط در محاسبه تعادل اولویت و پیشنهاد چرخش خودکار شرکت نمی‌کنند.</div>
+        <div class="settings-rule">بخش‌های فعالِ انتخاب‌نشده در مرحله ۲ در آمار باقی می‌مانند، اما وزن آن‌ها در شاخص بار وزنی صفر است.</div>
 
         <div class="members-area">
           <h4>اعضا (${fa(sourceGroup.members.length)})</h4>
