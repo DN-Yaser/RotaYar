@@ -36,7 +36,7 @@ function periodBar(ctx) {
     </div>
     <div class="period-info">
       <div><small>وضعیت این ماه</small>${status}</div>
-      <div><small>امروز، براساس تاریخ دستگاه</small><b>${formatJalaliDate(new Date())}</b></div>
+      <div><small>تاریخ امروز</small><b>${formatJalaliDate(new Date())}</b></div>
       <div class="last-saved"><small>آخرین ثبت نهایی برنامه</small><b>${ctx.lastFinalizedAt ? formatJalaliDateTime(ctx.lastFinalizedAt) : 'هنوز ثبت نهایی انجام نشده است'}</b></div>
     </div>
     <div class="finalize-row">
